@@ -1,0 +1,348 @@
+# модули
+
+import json            #  Для хранения заметок: читает и пишет JSON-файлы
+import os              #  Для проверки существования файла (есть ли notes.json на диске)
+from datetime import datetime  #  Для простановки даты и времени создания заметки
+
+import tkinter as tk             #  Главная библиотека для окон и кнопок
+from tkinter import ttk          #  Современные виджеты (Treeview, Entry, Button)
+from tkinter import messagebox  # Всплывающие окна: "Успех", "Ошибка", "Вы уверены?"
+from tkinter import simpledialog #  Диалоги ввода: "Введите заголовок", "Введите текст"
+
+
+
+class Note:
+    """Одна заметка: заголовок, текст, дата создания и уникальный ID."""
+
+    def __init__(self, title, content, note_id=None):
+        # ID — уникальный номер. Если не передан — генерируем автоматически.
+        self.id = note_id if note_id is not None else self._generate_id()
+
+        self.title = title        #  Заголовок — короткое название заметки
+        self.content = content    #  Текст — содержимое заметки
+        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        #  created_at — дата и время создания, фиксируется один раз
+
+    @staticmethod
+    def _generate_id():
+        #  Генерация ID: берём текущее время в миллисекундах.
+        # Это гарантирует уникальность — две заметки не получат один номер.
+        return int(datetime.now().timestamp() * 1000)
+
+    def to_dict(self):
+        #  Превращаем заметку в словарь для записи в JSON-файл.
+        # Мини-заметка: «Это упаковка карточки перед тем, как положить
+        # её в общую папку (файл notes.json)».
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "created_at": self.created_at
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        #  Создаём заметку из словаря (при загрузке из JSON-файла).
+        # Мини-заметка: «Это распаковка карточки из папки обратно в программу».
+        note = cls(
+            title=data["title"],         # берём заголовок из файла
+            content=data["content"],     # берём текст из файла
+            note_id=data.get("id")       # берём ID из файла, не генерируем новый
+        )
+        note.created_at = data.get("created_at", note.created_at)
+        #  Восстанавливаем оригинальную дату из файла,
+        # а не ставим текущую.
+        return note
+
+class NoteManager:
+    """Коллекция заметок: загрузка, сохранение, поиск, редактирование, удаление."""
+
+    def __init__(self, filename="notes.json"):
+        self.filename = filename  #  Имя файла-хранилища (по умолчанию notes.json)
+        self.notes = self.load_notes()  #  Список всех заметок в памяти
+
+    def load_notes(self):
+        #  Чтение из файла при запуске приложения.
+        # Мини-заметка: «Если папки (файла) ещё нет — начинаем с пустого
+        # списка. Если файл повреждён — тоже начинаем заново».
+        if not os.path.exists(self.filename):
+            return []
+        try:
+            with open(self.filename, "r", encoding="utf-8") as f:
+                data = json.load(f)  # читаем JSON-файл
+                return [Note.from_dict(item) for item in data]
+                # Превращаем каждый словарь из файла в объект Note
+        except (json.JSONDecodeError, IOError):
+            #  Если файл повреждён или нет прав на чтение
+            print(" Не удалось прочитать файл заметок. Начнём с пустой коллекции.")
+            return []
+
+    def save_notes(self):
+        #  Запись всех заметок в файл.
+        # Мини-заметка: «Упаковываем каждую карточку в словарь
+        # (to_dict) и кладём в папку (записываем JSON)».
+        try:
+            with open(self.filename, "w", encoding="utf-8") as f:
+                json.dump(
+                    [note.to_dict() for note in self.notes],
+                    f,
+                    ensure_ascii=False,  # ✅ Корректное сохранение кириллицы
+                    indent=2             # ✅ Красивое форматирование файла
+                )
+        except IOError as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить заметки: {e}")
+
+    def add_note(self, title, content):
+        #  Создание новой заметки.
+        # Мини-заметка: «Создаём карточку, кладём в папку,
+        # сразу сохраняем всё на диск».
+        new_note = Note(title, content)
+        self.notes.append(new_note)   # добавляем в список в памяти
+        self.save_notes()             # сохраняем в файл
+        return new_note
+
+    def get_all_notes(self):
+        #  Возвращает все заметки (для отображения в таблице).
+        return self.notes
+
+    def search_notes(self, keyword):
+        #  Поиск по ключевому слову в заголовке и тексте.
+        # Мини-заметка: «Перебираем все карточки в папке
+        # и отбираем те, где встречается нужное слово».
+        keyword = keyword.lower()
+        return [
+            n for n in self.notes
+            if keyword in n.title.lower() or keyword in n.content.lower()
+        ]
+
+    def edit_note(self, note_id, new_title=None, new_content=None):
+        #  Редактирование заметки по ID.
+        # Мини-заметка: «Ищем карточку по номеру, меняем
+        # заголовок и/или текст, сохраняем обратно».
+        for note in self.notes:
+            if note.id == note_id:
+                if new_title is not None:
+                    note.title = new_title      # меняем заголовок, если передан
+                if new_content is not None:
+                    note.content = new_content  # меняем текст, если передан
+                self.save_notes()
+                return True
+        return False  # не нашли заметку с таким ID
+
+    def delete_note(self, note_id):
+        #  Удаление заметки по ID.
+        # Мини-заметка: «Вынимаем карточку из папки
+        # и сохраняем обновлённую папку».
+        initial_len = len(self.notes)
+        self.notes = [n for n in self.notes if n.id != note_id]
+        # Оставляем только те заметки, ID которых НЕ совпадает
+        if len(self.notes) < initial_len:
+            self.save_notes()  # что-то удалили — сохраняем
+            return True
+        else:
+            return False  # ничего не удалили — ID не найден
+
+class NotesApp:
+    """Главное окно приложения с таблицей, поиском и кнопками."""
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Заметки — GUI версия")  # заголовок окна
+        self.root.geometry("700x550")             # размер окна
+        self.manager = NoteManager()              # создаём «папку» с заметками
+
+        # ── СТИЛИ ──
+        # Мини-заметка: «Настройка внешнего вида кнопок и текста».
+        style = ttk.Style()
+        style.configure("TButton", padding=6, relief="flat", font=("Arial", 10, "bold"))
+        style.configure("Header.TLabel", font=("Arial", 14, "bold"), foreground="#2c3e50")
+
+        # ── ВЕРХНЯЯ ПАНЕЛЬ: заголовок + поиск ──
+        # Мини-заметка: «Полоска сверху: слева — название,
+        # справа — поле поиска и кнопка Найти».
+        top_frame = ttk.Frame(root, padding=10)
+        top_frame.pack(fill="x")
+
+        ttk.Label(top_frame, text="Мои заметки", style="Header.TLabel").pack(side="left")
+
+        search_frame = ttk.Frame(top_frame)
+        search_frame.pack(side="right")
+        ttk.Label(search_frame, text="Поиск:").pack(side="left", padx=5)
+        self.search_entry = ttk.Entry(search_frame, width=20)
+        #  Поле ввода для ключевого слова
+        self.search_entry.pack(side="left", padx=5)
+        btn_search = ttk.Button(search_frame, text="🔍 Найти", command=self.on_search)
+        # Кнопка поиска — вызывает метод on_search
+        btn_search.pack(side="left")
+
+        # ── ОСНОВНАЯ ОБЛАСТЬ: таблица со списком заметок ──
+        # Мини-заметка: «Это сама папка, раскрытая на экране:
+        # три столбца — ID, Заголовок, Дата создания».
+        list_frame = ttk.LabelFrame(root, text="Список заметок", padding=10)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        columns = ("id", "title", "created_at")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        #  Treeview — таблица для отображения заметок
+
+        self.tree.heading("id", text="ID")            # заголовок столбца 1
+        self.tree.heading("title", text="Заголовок")  # заголовок столбца 2
+        self.tree.heading("created_at", text="Дата создания")  # заголовок столбца 3
+
+        self.tree.column("id", width=60, anchor="center")
+        #  Столбец ID: узкий, по центру — номер заметки
+        self.tree.column("title", width=400, anchor="w")
+        #  Столбец Заголовок: широкий, слева — название заметки
+        self.tree.column("created_at", width=150, anchor="center")
+        #  Столбец Дата: средний, по центру — когда создана
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        # Прокрутка — если заметок много, можно скроллить
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.tree.bind("<Double-1>", self.on_double_click)
+        # 🖱️ Двойной клик по строке — открывает окно просмотра
+
+        # ── НИЖНЯЯ ПАНЕЛЬ: кнопки действий ──
+        # Мини-заметка: «Панель управления: создать, редактировать,
+        # удалить — и кнопка обновления списка справа».
+        action_frame = ttk.Frame(root, padding=10)
+        action_frame.pack(fill="x")
+
+        btn_add = ttk.Button(action_frame, text="➕ Создать", command=self.on_add)
+        btn_add.pack(side="left", padx=5)
+        # ➕ Кнопка создания — вызывает on_add
+
+        btn_edit = ttk.Button(action_frame, text="✏️ Редактировать", command=self.on_edit_selected)
+        btn_edit.pack(side="left", padx=5)
+        # ✏️ Кнопка редактирования — вызывает on_edit_selected
+
+        btn_delete = ttk.Button(action_frame, text="🗑️ Удалить", command=self.on_delete_selected)
+        btn_delete.pack(side="left", padx=5)
+        # 🗑️ Кнопка удаления — вызывает on_delete_selected
+
+        btn_refresh = ttk.Button(action_frame, text="🔄 Обновить", command=self.refresh_list)
+        btn_refresh.pack(side="right", padx=5)
+        # 🔄 Кнопка обновления — перерисовывает таблицу
+
+        self.refresh_list()  # при запуске заполняем таблицу из файла
+
+    def refresh_list(self):
+        #  Перерисовка таблицы из self.manager.notes.
+        # Мини-заметка: «Вытряхиваем всё из папки на стол,
+        # раскладываем по строкам таблицы».
+        for item in self.tree.get_children():
+            self.tree.delete(item)  # очищаем старые строки
+        notes = self.manager.get_all_notes()
+        for note in notes:
+            self.tree.insert("", "end", values=(note.id, note.title, note.created_at))
+            # вставляем строку: ID, заголовок, дата
+
+    def on_search(self):
+        #  Поиск: берём слово из поля, фильтруем список.
+        # Мини-заметка: «Если поле пустое — показываем всё.
+        # Если нет результатов — таблица очищается».
+        keyword = self.search_entry.get().strip()
+        if not keyword:
+            self.refresh_list()
+            return
+        results = self.manager.search_notes(keyword)
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for note in results:
+            self.tree.insert("", "end", values=(note.id, note.title, note.created_at))
+
+    def on_add(self):
+        #  Создание: два диалога — заголовок и текст.
+        # Мини-заметка: «Спрашиваем название и содержание,
+        # кладём карточку в папку, показываем уведомление».
+        title = simpledialog.askstring("Новая заметка", "Введите заголовок:")
+        if not title:
+            return
+        content = simpledialog.askstring("Новая заметка", "Введите текст заметки:")
+        if content is None:
+            return
+        if not content.strip():
+            messagebox.showwarning("Внимание", "Текст заметки не может быть пустым.")
+            return
+        self.manager.add_note(title, content)
+        self.refresh_list()
+        messagebox.showinfo("Успех", "Заметка добавлена!")
+
+    def get_selected_note(self):
+        #  Получение ID выбранной строки в таблице.
+        # Мини-заметка: «Смотрим, какую карточку ты выделил,
+        # берём её номер для редактирования или удаления».
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Внимание", "Выберите заметку из списка.")
+            return None
+        item = self.tree.item(selected[0])
+        values = item["values"]
+        note_id = values[0]
+        return note_id
+
+    def on_edit_selected(self):
+        #  Редактирование: подставляем старые значения,
+        # сохраняем новые.
+        note_id = self.get_selected_note()
+        if not note_id:
+            return
+        note = next((n for n in self.manager.notes if n.id == note_id), None)
+        if not note:
+            messagebox.showerror("Ошибка", "Заметка не найдена.")
+            return
+        new_title = simpledialog.askstring("Редактирование", "Новый заголовок:", initialvalue=note.title)
+        if new_title is None:
+            return
+        new_content = simpledialog.askstring("Редактирование", "Новый текст:", initialvalue=note.content)
+        if new_content is None:
+            return
+        if self.manager.edit_note(note_id, new_title, new_content):
+            self.refresh_list()
+            messagebox.showinfo("Успех", "Заметка обновлена!")
+
+    def on_delete_selected(self):
+        #  Удаление: спрашиваем подтверждение, удаляем по ID.
+        # Мини-заметка: «Переспрашиваем, чтобы не удалить
+        # случайно нужную карточку».
+        note_id = self.get_selected_note()
+        if not note_id:
+            return
+        confirm = messagebox.askyesno("Подтверждение", "Вы уверены, что хотите удалить эту заметку?")
+        if confirm:
+            if self.manager.delete_note(note_id):
+                self.refresh_list()
+                messagebox.showinfo("Готово", "Заметка удалена.")
+
+    def on_double_click(self, event):
+        # 🖱️ Двойной клик: показываем полное содержимое заметки.
+        # Мини-заметка: «Раскрываем карточку целиком —
+        # все поля в одном окне».
+        note_id = self.get_selected_note()
+        if not note_id:
+            return
+        note = next((n for n in self.manager.notes if n.id == note_id), None)
+        if not note:
+            return
+        msg = (f"📋 ID: {note.id}\n"
+               f"📝 Заголовок: {note.title}\n\n"
+               f"💬 Текст:\n{note.content}\n\n"
+               f"🕒 Создано: {note.created_at}")
+        messagebox.showinfo("Просмотр заметки", msg)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ЗАПУСК ПРИЛОЖЕНИЯ
+# Мини-заметка: «Создаём окно, передаём его в приложение,
+# запускаем бесконечный цикл — окно остаётся открытым,
+# пока пользователь его не закроет».
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+if __name__ == "__main__":
+    root = tk.Tk()       # создаём главное окно
+    app = NotesApp(root) # передаём его в приложение
+    root.mainloop()      # запускаем цикл обработки событий
